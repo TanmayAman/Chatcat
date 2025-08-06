@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ephemeral Chat (No History) - GitHub Pages Ready</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            max-width: 600px;
+            height: 90vh;
+            max-height: 800px;
+            background-color: #ffffff;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+        }
+        .chat-header {
+            padding: 1rem;
+            background-color: #ef4444; /* Red for ephemeral nature */
+            color: white;
+            font-weight: 600;
+            border-top-left-radius: 1rem;
+            border-top-right-radius: 1rem;
+            text-align: center;
+        }
+        .chat-messages {
+            flex-grow: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            background-color: #f7f8fa;
+        }
+        .message-bubble {
+            max-width: 80%;
+            padding: 0.6rem 0.9rem;
+            border-radius: 0.75rem;
+            word-wrap: break-word;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+        .message-bubble.sent {
+            background-color: #f87171; /* Lighter red for sent */
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 0.25rem;
+        }
+        .message-bubble.received {
+            background-color: #e2e8f0;
+            color: #334155;
+            align-self: flex-start;
+            border-bottom-left-radius: 0.25rem;
+        }
+        .message-info {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-top: 0.2rem;
+        }
+        .message-bubble.sent .message-info {
+            color: #fee2e2;
+            text-align: right;
+        }
+        .chat-input-area {
+            display: flex;
+            padding: 1rem;
+            border-top: 1px solid #e5e7eb;
+            background-color: #ffffff;
+            border-bottom-left-radius: 1rem;
+            border-bottom-right-radius: 1rem;
+        }
+        .chat-input-area input {
+            flex-grow: 1;
+            padding: 0.75rem 1rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.75rem;
+            outline: none;
+            font-size: 1rem;
+            margin-right: 0.75rem;
+            transition: border-color 0.2s;
+        }
+        .chat-input-area input:focus {
+            border-color: #ef4444;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+        }
+        .chat-input-area button {
+            background-color: #ef4444;
+            color: white;
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .chat-input-area button:hover {
+            background-color: #dc2626;
+            transform: translateY(-1px);
+        }
+        .chat-input-area button:active {
+            transform: translateY(0);
+        }
+        .status-message {
+            font-size: 0.875rem;
+            color: #6b7280;
+            text-align: center;
+            padding: 0.5rem;
+        }
+        .user-id-display {
+            font-size: 0.8rem;
+            color: #fca5a5; /* Lighter red for user ID */
+            margin-top: 0.5rem;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            Ephemeral Chat (No History)
+            <div id="connection-status" class="status-message text-white mt-2">Connecting...</div>
+            <div id="user-id-display" class="user-id-display">Your ID: Generating...</div>
+        </div>
+        <div id="chat-messages" class="chat-messages">
+            <div class="status-message">Messages will only be visible while you are connected. They are not saved.</div>
+            <div class="status-message text-red-600 font-bold">
+                NOTE: For multi-user chat, a WebSocket server must be running and accessible at the configured URL.
+                Without a server, this chat is local to your browser tab.
+            </div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" id="message-input" placeholder="Type your message...">
+            <button id="send-button">Send</button>
+        </div>
+    </div>
+
+    <script>
+        const chatMessagesDiv = document.getElementById('chat-messages');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const connectionStatusDiv = document.getElementById('connection-status');
+        const userIdDisplay = document.getElementById('user-id-display');
+
+        // IMPORTANT: Replace this with the actual URL of your WebSocket server.
+        // If you are running a server locally (e.g., Node.js on port 8080), use 'ws://localhost:8080'.
+        // If you deploy a server to a cloud platform, use its public WebSocket URL (e.g., 'wss://your-server-app.com').
+        // Without a server, this chat will only work within the same browser tab.
+        const WEBSOCKET_SERVER_URL = 'ws://localhost:8080'; // Default for local testing
+
+        let ws; // WebSocket instance
+        // Generate a simple, ephemeral user ID for this session
+        const userId = 'User_' + Math.random().toString(36).substring(2, 9);
+        userIdDisplay.textContent = `Your ID: ${userId}`;
+
+        // Function to scroll chat to the bottom
+        function scrollToBottom() {
+            chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+        }
+
+        // Function to display messages
+        function displayMessage(sender, text, type) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message-bubble');
+            messageElement.classList.add(type); // 'sent' or 'received'
+
+            const messageText = document.createElement('p');
+            messageText.textContent = text;
+            messageElement.appendChild(messageText);
+
+            const messageInfo = document.createElement('div');
+            messageInfo.classList.add('message-info');
+            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            messageInfo.textContent = `${sender} at ${time}`;
+            messageElement.appendChild(messageInfo);
+
+            chatMessagesDiv.appendChild(messageElement);
+            scrollToBottom();
+        }
+
+        // Function to connect to WebSocket
+        function connectWebSocket() {
+            connectionStatusDiv.textContent = 'Connecting...';
+            connectionStatusDiv.classList.remove('text-green-300', 'text-red-500');
+            messageInput.disabled = true;
+            sendButton.disabled = true;
+
+            ws = new WebSocket(WEBSOCKET_SERVER_URL);
+
+            ws.onopen = () => {
+                connectionStatusDiv.textContent = 'Connected (Ephemeral)';
+                connectionStatusDiv.classList.add('text-green-300');
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+                console.log('WebSocket connected.');
+                // Send user ID to server upon connection for identification
+                ws.send(JSON.stringify({ type: 'user_connected', userId: userId }));
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    // Assuming the server sends messages in a specific format
+                    if (data.type === 'chat_message') {
+                        // Determine if the message was sent by this user or another
+                        const senderName = data.senderId === userId ? 'You' : `User: ${data.senderId.substring(0, 8)}...`;
+                        const messageType = data.senderId === userId ? 'sent' : 'received';
+                        displayMessage(senderName, data.text, messageType);
+                    } else if (data.type === 'server_message') {
+                        // For server-generated messages (e.g., user joined/left)
+                        displayMessage('System', data.text, 'received');
+                    }
+                } catch (e) {
+                    console.error('Error parsing message from server:', e);
+                    // Fallback for plain text messages from server
+                    displayMessage('Other', event.data, 'received');
+                }
+            };
+
+            ws.onclose = () => {
+                connectionStatusDiv.textContent = 'Disconnected. Reconnecting...';
+                connectionStatusDiv.classList.remove('text-green-300');
+                connectionStatusDiv.classList.add('text-red-500');
+                messageInput.disabled = true;
+                sendButton.disabled = true;
+                console.log('WebSocket disconnected. Attempting to reconnect in 3 seconds...');
+                setTimeout(connectWebSocket, 3000); // Attempt to reconnect after 3 seconds
+            };
+
+            ws.onerror = (error) => {
+                connectionStatusDiv.textContent = 'Connection Error. Reconnecting...';
+                connectionStatusDiv.classList.remove('text-green-300');
+                connectionStatusDiv.classList.add('text-red-500');
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        // Function to send a message via WebSocket
+        function sendMessage() {
+            const messageText = messageInput.value.trim();
+            // Only send if there's text and the WebSocket is open
+            if (messageText === "" || ws.readyState !== WebSocket.OPEN) {
+                return;
+            }
+
+            const messagePayload = {
+                type: 'chat_message',
+                senderId: userId, // Include the unique ID of the sender
+                text: messageText,
+                timestamp: new Date().toISOString() // Client-side timestamp for display
+            };
+
+            try {
+                ws.send(JSON.stringify(messagePayload));
+                // Display the sent message immediately for a smoother user experience
+                // The server will echo it back, but this prevents a slight delay
+                displayMessage('You', messageText, 'sent');
+                messageInput.value = ""; // Clear input field
+            } catch (e) {
+                console.error("Error sending message:", e);
+                // Optionally show a temporary error message to the user
+            }
+        }
+
+        // Event Listeners
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Initial connection attempt when the page loads
+        window.onload = connectWebSocket;
+    </script>
+</body>
+</html>
